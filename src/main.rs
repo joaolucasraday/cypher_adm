@@ -7,11 +7,12 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    net::SocketAddr,
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
+use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
+use vercel_runtime::{axum::VercelLayer, Error};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Device {
@@ -42,10 +43,10 @@ pub struct CommandResponse {
 type AppState = Arc<Mutex<HashMap<String, Device>>>;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Error> {
     let state: AppState = Arc::new(Mutex::new(HashMap::new()));
 
-    let app = Router::new()
+    let router = Router::new()
         .route("/", get(dashboard_handler))
         .route("/api/devices", get(get_devices))
         .route("/api/heartbeat", post(handle_heartbeat))
@@ -53,6 +54,10 @@ async fn main() {
         .route("/api/device/:hostname/toggle", post(toggle_quarantine))
         .layer(CorsLayer::permissive())
         .with_state(state);
+
+    let app = ServiceBuilder::new()
+        .layer(VercelLayer::new())
+        .service(router);
 
     vercel_runtime::run(app).await
 }
