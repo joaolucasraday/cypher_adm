@@ -1,13 +1,8 @@
 {
-  "functions": {
-    "api/**/*.rs": {
-      "runtime": "vercel-rust@latest"
-    }
-  },
-  "routes": [
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "/api"
+      "source": "/(.*)",
+      "destination": "/api/main"
     }
   ]
 }

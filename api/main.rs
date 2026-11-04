@@ -54,14 +54,7 @@ async fn main() {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8443));
-    println!("=================================================");
-    println!("     CYPHER ADM - PAINEL OPERACIONAL ATIVO       ");
-    println!("     Acesse no navegador: http://localhost:8443 ");
-    println!("=================================================");
-
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    vercel_runtime::run(app).await
 }
 
 fn now_secs() -> u64 {
