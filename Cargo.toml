@@ -2,6 +2,7 @@
 name = "cypher_adm"
 version = "0.1.0"
 edition = "2021"
+vercel_runtime = "1.0"
 
 [dependencies]
 axum = "0.7"

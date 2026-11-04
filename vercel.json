@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/**/*.rs": {
+      "runtime": "vercel-rust@latest"
+    }
+  },
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api"
+    }
+  ]
+}
