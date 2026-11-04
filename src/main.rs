@@ -51,7 +51,7 @@ async fn main() -> Result<(), Error> {
         .route("/api/devices", get(get_devices))
         .route("/api/heartbeat", post(handle_heartbeat))
         .route("/api/alert", post(handle_alert))
-        .route("/api/device/:hostname/toggle", post(toggle_quarantine))
+        .route("/api/device/{hostname}/toggle", post(toggle_quarantine))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
