@@ -751,7 +751,8 @@ async fn dashboard_handler() -> Html<&'static str> {
             document.getElementById('nav-count').innerText = devices.length;
             document.getElementById('stat-total').innerText = devices.length;
 
-            const normalCount = devices.filter(d => d.status === 'NORMAL').length;
+            const nowSecs = Math.floor(Date.now() / 1000);
+            const normalCount = devices.filter(d => d.status === 'NORMAL' && (nowSecs - d.last_seen) <= 8).length;
             const quarantineCount = devices.filter(d => d.status === 'QUARENTENA').length;
             document.getElementById('stat-normal').innerText = normalCount;
             document.getElementById('stat-quarantine').innerText = quarantineCount;
@@ -771,8 +772,19 @@ async fn dashboard_handler() -> Html<&'static str> {
                 const displayName = d.alias ? d.alias : d.hostname;
                 const subHostname = d.alias ? d.hostname : 'Hostname sem apelido';
 
+                // Cálculo de Timeout do Heartbeat no Front-end
+                const diffSecs = Math.max(0, nowSecs - d.last_seen);
+                const isOffline = diffSecs > 8;
+                const timeText = diffSecs < 60 ? `${diffSecs}s` : `${Math.floor(diffSecs / 60)}m`;
+
+                const statusBadge = isOffline
+                    ? `<span class="text-[11px] font-bold px-2.5 py-1 rounded-full border bg-slate-800/80 text-slate-400 border-slate-700">○ OFFLINE (${timeText})</span>`
+                    : isQuarantine
+                    ? `<span class="text-[11px] font-bold px-2.5 py-1 rounded-full border bg-rose-500/10 text-rose-400 border-rose-500/30">● EM QUARENTENA</span>`
+                    : `<span class="text-[11px] font-bold px-2.5 py-1 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">● PROTEGIDO</span>`;
+
                 return `
-                <div class="bg-surface-900 border ${isQuarantine ? 'border-rose-500/60 shadow-xl shadow-rose-500/10' : 'border-surface-800'} rounded-3xl p-6 flex flex-col justify-between shadow-lg transition-all">
+                <div class="bg-surface-900 border ${isQuarantine ? 'border-rose-500/60 shadow-xl shadow-rose-500/10' : isOffline ? 'border-surface-800/60 opacity-80' : 'border-surface-800'} rounded-3xl p-6 flex flex-col justify-between shadow-lg transition-all">
                     <div>
                         <!-- Header do Card -->
                         <div class="flex justify-between items-start mb-4">
@@ -786,9 +798,7 @@ async fn dashboard_handler() -> Html<&'static str> {
                                 </div>
                                 <p class="text-[11px] font-mono text-slate-500 mt-0.5">${subHostname}</p>
                             </div>
-                            <span class="text-[11px] font-bold px-2.5 py-1 rounded-full border ${isQuarantine ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'}">
-                                ${isQuarantine ? '● EM QUARENTENA' : '● PROTEGIDO'}
-                            </span>
+                            ${statusBadge}
                         </div>
 
                         <!-- IP em Destaque -->
@@ -798,13 +808,17 @@ async fn dashboard_handler() -> Html<&'static str> {
                         </div>
 
                         <!-- Alerta ou Status de Proteção -->
-                        ${d.last_alert ? `
+                        ${isOffline ? `
+                        <div class="mb-5 bg-surface-950/40 p-3 rounded-2xl text-xs text-slate-500 flex items-center gap-2 border border-surface-800/40">
+                            <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                            <span>Sem sinal do Agent há ${timeText}</span>
+                        </div>` : d.last_alert ? `
                         <div class="mb-5 bg-rose-500/10 border border-rose-500/30 p-3.5 rounded-2xl text-xs text-rose-300">
                             <span class="font-bold block text-rose-400 mb-1">🚨 Violação Detectada:</span>
                             <span class="font-mono text-[11px]">${d.last_alert}</span>
                         </div>` : `
                         <div class="mb-5 bg-surface-950/40 p-3 rounded-2xl text-xs text-slate-400 flex items-center gap-2 border border-surface-800/40">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                             <span>Integridade de arquivos preservada</span>
                         </div>`}
                     </div>
