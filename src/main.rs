@@ -50,6 +50,8 @@ pub struct BoletoAlert {
     pub score_risco: u32,
     pub recomendacao: String,
     pub detalhes_alerta: Vec<String>,
+    #[serde(default)]
+    pub status_auditoria: Option<String>, // "PENDENTE", "BLOQUEADO", "APROVADO"
 }
 
 #[derive(Deserialize)]
@@ -83,6 +85,11 @@ pub struct FinancialReportPayload {
     pub fatores_risco: Vec<String>,
 }
 
+#[derive(Deserialize)]
+pub struct BoletoActionPayload {
+    pub action: String, // "bloquear" ou "auditar"
+}
+
 #[derive(Serialize)]
 pub struct CommandResponse {
     pub should_isolate: bool,
@@ -106,6 +113,7 @@ async fn main() -> Result<(), Error> {
         .route("/api/devices", get(get_devices))
         .route("/api/incidents", get(get_incidents))
         .route("/api/boletos", get(get_boleto_alerts))
+        .route("/api/boletos/{id}/action", post(handle_boleto_action))
         .route("/api/heartbeat", post(handle_heartbeat))
         .route("/api/alert", post(handle_alert))
         .route("/api/audit/financial", post(handle_financial_audit))
@@ -144,6 +152,23 @@ async fn get_incidents(State(state): State<AppState>) -> Json<Vec<Incident>> {
 async fn get_boleto_alerts(State(state): State<AppState>) -> Json<Vec<BoletoAlert>> {
     let app_data = state.lock().unwrap();
     Json(app_data.boleto_alerts.clone())
+}
+
+// Trata ações de bloquear ou auditar (aceitar) um boleto pelo operador
+async fn handle_boleto_action(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+    Json(payload): Json<BoletoActionPayload>,
+) -> Json<serde_json::Value> {
+    let mut app_data = state.lock().unwrap();
+    if let Some(alert) = app_data.boleto_alerts.iter_mut().find(|b| b.id == id) {
+        if payload.action == "bloquear" {
+            alert.status_auditoria = Some("BLOQUEADO".to_string());
+        } else if payload.action == "auditar" || payload.action == "aprovar" {
+            alert.status_auditoria = Some("APROVADO".to_string());
+        }
+    }
+    Json(serde_json::json!({ "ok": true }))
 }
 
 // Recebe heartbeat do Agent e diz se ele deve estar isolado ou não
@@ -244,6 +269,12 @@ async fn handle_financial_audit(
         }
     }
 
+    let status_inicial = if payload.confiavel {
+        Some("APROVADO".to_string())
+    } else {
+        Some("PENDENTE".to_string())
+    };
+
     let boleto_entry = BoletoAlert {
         id: format!("BOL-{}", now_secs() % 100000),
         timestamp: now_secs(),
@@ -255,6 +286,7 @@ async fn handle_financial_audit(
         score_risco: payload.score_risco,
         recomendacao: payload.recomendacao.clone(),
         detalhes_alerta: payload.fatores_risco.clone(),
+        status_auditoria: status_inicial,
     };
     app_data.boleto_alerts.insert(0, boleto_entry);
 
@@ -597,14 +629,18 @@ async fn dashboard_handler() -> Html<&'static str> {
             <!-- ============================================== -->
             <section id="tab-boletos" class="tab-pane hidden space-y-6">
                 <!-- Métricas Exclusivas de Boletos -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div class="bg-surface-900 border border-surface-800 p-5 rounded-2xl shadow-sm">
-                        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Documentos Auditados</span>
+                        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Avisos Registrados</span>
                         <div id="stat-boletos-total" class="text-3xl font-extrabold text-white mt-1">0</div>
                     </div>
                     <div class="bg-surface-900 border border-surface-800 p-5 rounded-2xl shadow-sm">
-                        <span class="text-xs font-semibold text-rose-400 uppercase tracking-wider">Fraudes Bloqueadas</span>
+                        <span class="text-xs font-semibold text-rose-400 uppercase tracking-wider">Boletos Bloqueados</span>
                         <div id="stat-boletos-fraudes" class="text-3xl font-extrabold text-rose-400 mt-1">0</div>
+                    </div>
+                    <div class="bg-surface-900 border border-surface-800 p-5 rounded-2xl shadow-sm">
+                        <span class="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Auditados / Aprovados</span>
+                        <div id="stat-boletos-aprovados" class="text-3xl font-extrabold text-emerald-400 mt-1">0</div>
                     </div>
                 </div>
 
@@ -631,11 +667,12 @@ async fn dashboard_handler() -> Html<&'static str> {
                                     <th class="py-3.5 px-4 font-semibold">Score Risco</th>
                                     <th class="py-3.5 px-4 font-semibold">Status</th>
                                     <th class="py-3.5 px-4 font-semibold">Parecer Técnico</th>
+                                    <th class="py-3.5 px-4 font-semibold text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="boletos-tbody" class="divide-y divide-surface-800/60 font-mono">
                                 <tr>
-                                    <td colspan="7" class="text-center py-12 text-slate-500 font-sans">
+                                    <td colspan="8" class="text-center py-12 text-slate-500 font-sans">
                                         Nenhum aviso ou documento financeiro registrado até o momento.
                                     </td>
                                 </tr>
@@ -878,6 +915,20 @@ async fn dashboard_handler() -> Html<&'static str> {
             }
         }
 
+        async function handleBoletoAction(id, action) {
+            try {
+                await fetch(`/api/boletos/${id}/action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                fetchBoletoAlerts();
+                fetchIncidents();
+            } catch (err) {
+                console.error("Falha ao atualizar ação do boleto:", err);
+            }
+        }
+
         async function toggleQuarantine(hostname) {
             await fetch(`/api/device/${hostname}/toggle`, { method: 'POST' });
             fetchDevices();
@@ -1005,27 +1056,37 @@ async fn dashboard_handler() -> Html<&'static str> {
             const tbody = document.getElementById('boletos-tbody');
             const totalEl = document.getElementById('stat-boletos-total');
             const fraudesEl = document.getElementById('stat-boletos-fraudes');
-            const validosEl = document.getElementById('stat-boletos-validos');
+            const aprovadosEl = document.getElementById('stat-boletos-aprovados');
             const badgeCount = document.getElementById('boletos-count');
 
-            const fraudesCount = list.filter(b => !b.confiavel).length;
-            const validosCount = list.filter(b => b.confiavel).length;
+            // Filtra exclusivamente os boletos adulterados / com suspeita de fraude
+            const boletosSuspeitos = list.filter(b => !b.confiavel || b.score_risco > 20);
 
-            totalEl.innerText = list.length;
-            fraudesEl.innerText = fraudesCount;
-            validosEl.innerText = validosCount;
-            badgeCount.innerText = fraudesCount;
+            const bloqueadosCount = boletosSuspeitos.filter(b => b.status_auditoria === 'BLOQUEADO').length;
+            const aprovadosCount = boletosSuspeitos.filter(b => b.status_auditoria === 'APROVADO').length;
 
-            if (!list || list.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-slate-500 font-sans">Nenhum aviso ou documento financeiro registrado até o momento.</td></tr>`;
+            totalEl.innerText = boletosSuspeitos.length;
+            fraudesEl.innerText = bloqueadosCount;
+            aprovadosEl.innerText = aprovadosCount;
+            badgeCount.innerText = boletosSuspeitos.filter(b => b.status_auditoria !== 'APROVADO').length;
+
+            if (!boletosSuspeitos || boletosSuspeitos.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-12 text-slate-500 font-sans">Nenhum aviso ou documento financeiro registrado até o momento.</td></tr>`;
                 return;
             }
 
-            tbody.innerHTML = list.map(b => {
-                const isFraud = !b.confiavel;
-                const statusBadge = isFraud 
-                    ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold border text-rose-400 bg-rose-500/10 border-rose-500/30">⚠ FRAUDE DETECTADA</span>`
-                    : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">✓ AUTÊNTICO / ÍNTEGRO</span>`;
+            tbody.innerHTML = boletosSuspeitos.map(b => {
+                const statusAuditoria = b.status_auditoria || 'PENDENTE';
+                
+                let statusBadge = '';
+                if (statusAuditoria === 'BLOQUEADO') {
+                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-rose-400 bg-rose-500/10 border-rose-500/30">⛔ BLOQUEADO</span>`;
+                } else if (statusAuditoria === 'APROVADO') {
+                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">✓ AUDITADO</span>`;
+                } else {
+                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-amber-400 bg-amber-500/10 border-amber-500/30 animate-pulse">⚠ PENDENTE</span>`;
+                }
+
                 const dateStr = new Date(b.timestamp * 1000).toLocaleString('pt-BR');
                 const nameDisplay = b.alias ? `${b.alias} (${b.hostname})` : b.hostname;
                 const scoreColor = b.score_risco > 50 ? 'text-rose-400' : b.score_risco > 20 ? 'text-amber-400' : 'text-emerald-400';
@@ -1043,6 +1104,18 @@ async fn dashboard_handler() -> Html<&'static str> {
                     <td class="py-3 px-4">${statusBadge}</td>
                     <td class="py-3 px-4 text-slate-300 font-sans text-xs max-w-xs truncate" title="${b.detalhes_alerta.join('; ')}">
                         ${b.detalhes_alerta.length > 0 ? b.detalhes_alerta.join('; ') : 'Documento sem divergências.'}
+                    </td>
+                    <td class="py-3 px-4 text-right">
+                        <div class="flex items-center justify-end gap-1.5">
+                            <button onclick="handleBoletoAction('${b.id}', 'bloquear')" 
+                                class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-[11px] font-semibold transition-all">
+                                ⛔ Bloquear
+                            </button>
+                            <button onclick="handleBoletoAction('${b.id}', 'auditar')" 
+                                class="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-[11px] font-semibold transition-all">
+                                ✓ Auditar
+                            </button>
+                        </div>
                     </td>
                 </tr>`;
             }).join('');
@@ -1078,6 +1151,7 @@ async fn dashboard_handler() -> Html<&'static str> {
         }
 
         setInterval(fetchDevices, 2500);
+        setInterval(fetchBoletoAlerts, 3000);
         checkAuth();
     </script>
 </body>
