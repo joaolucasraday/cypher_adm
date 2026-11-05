@@ -38,6 +38,20 @@ pub struct Incident {
     pub details: String,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct BoletoAlert {
+    pub id: String,
+    pub timestamp: u64,
+    pub hostname: String,
+    pub alias: Option<String>,
+    pub ip: String,
+    pub arquivo: String,
+    pub confiavel: bool,
+    pub score_risco: u32,
+    pub recomendacao: String,
+    pub detalhes_alerta: Vec<String>,
+}
+
 #[derive(Deserialize)]
 pub struct HeartbeatPayload {
     pub hostname: String,
@@ -55,6 +69,16 @@ pub struct RenamePayload {
     pub alias: String,
 }
 
+#[derive(Deserialize)]
+pub struct FinancialAuditPayload {
+    pub hostname: String,
+    pub arquivo: String,
+    pub confiavel: bool,
+    pub score_risco: u32,
+    pub recomendacao: String,
+    pub detalhes_alerta: Vec<String>,
+}
+
 #[derive(Serialize)]
 pub struct CommandResponse {
     pub should_isolate: bool,
@@ -64,6 +88,7 @@ pub struct CommandResponse {
 pub struct AppData {
     pub devices: HashMap<String, Device>,
     pub incidents: Vec<Incident>,
+    pub boleto_alerts: Vec<BoletoAlert>,
 }
 
 type AppState = Arc<Mutex<AppData>>;
@@ -76,8 +101,10 @@ async fn main() -> Result<(), Error> {
         .route("/", get(dashboard_handler))
         .route("/api/devices", get(get_devices))
         .route("/api/incidents", get(get_incidents))
+        .route("/api/boletos", get(get_boleto_alerts))
         .route("/api/heartbeat", post(handle_heartbeat))
         .route("/api/alert", post(handle_alert))
+        .route("/api/audit/financial", post(handle_financial_audit))
         .route("/api/device/{hostname}/toggle", post(toggle_quarantine))
         .route("/api/device/{hostname}/rename", post(rename_device))
         .layer(CorsLayer::permissive())
@@ -107,6 +134,12 @@ async fn get_devices(State(state): State<AppState>) -> Json<Vec<Device>> {
 async fn get_incidents(State(state): State<AppState>) -> Json<Vec<Incident>> {
     let app_data = state.lock().unwrap();
     Json(app_data.incidents.clone())
+}
+
+// Retorna lista exclusiva de auditorias e avisos sobre boletos
+async fn get_boleto_alerts(State(state): State<AppState>) -> Json<Vec<BoletoAlert>> {
+    let app_data = state.lock().unwrap();
+    Json(app_data.boleto_alerts.clone())
 }
 
 // Recebe heartbeat do Agent e diz se ele deve estar isolado ou não
@@ -185,6 +218,61 @@ async fn handle_alert(
         details: payload.details,
     };
     app_data.incidents.insert(0, incident);
+
+    Json(serde_json::json!({ "status": "acknowledged" }))
+}
+
+// Recebe relatório do validador de boletos enviado pelo Agent
+async fn handle_financial_audit(
+    State(state): State<AppState>,
+    Json(payload): Json<FinancialAuditPayload>,
+) -> Json<serde_json::Value> {
+    let mut app_data = state.lock().unwrap();
+    let mut ip_salvo = "Local".to_string();
+    let mut alias_salvo = None;
+
+    if let Some(device) = app_data.devices.get_mut(&payload.hostname) {
+        ip_salvo = device.ip.clone();
+        alias_salvo = device.alias.clone();
+
+        if !payload.confiavel {
+            device.last_alert = Some(format!("Boleto Suspeito: {}", payload.arquivo));
+        }
+    }
+
+    let boleto_entry = BoletoAlert {
+        id: format!("BOL-{}", now_secs() % 100000),
+        timestamp: now_secs(),
+        hostname: payload.hostname.clone(),
+        alias: alias_salvo.clone(),
+        ip: ip_salvo.clone(),
+        arquivo: payload.arquivo.clone(),
+        confiavel: payload.confiavel,
+        score_risco: payload.score_risco,
+        recomendacao: payload.recomendacao.clone(),
+        detalhes_alerta: payload.detalhes_alerta.clone(),
+    };
+    app_data.boleto_alerts.insert(0, boleto_entry);
+
+    // Se houver fraude comprovada, também registra no histórico geral de incidentes
+    if !payload.confiavel {
+        let incident = Incident {
+            id: format!("FRAUD-{}", now_secs() % 100000),
+            timestamp: now_secs(),
+            hostname: payload.hostname,
+            alias: alias_salvo,
+            ip: ip_salvo,
+            public_ip: None,
+            event_type: "FRAUDE_BOLETO".to_string(),
+            details: format!(
+                "Documento: '{}' | Risco: {}/100 | {}",
+                payload.arquivo,
+                payload.score_risco,
+                payload.detalhes_alerta.join("; ")
+            ),
+        };
+        app_data.incidents.insert(0, incident);
+    }
 
     Json(serde_json::json!({ "status": "acknowledged" }))
 }
@@ -414,6 +502,13 @@ async fn dashboard_handler() -> Html<&'static str> {
                         <span id="nav-count" class="bg-black/30 text-white px-2 py-0.2 rounded-full text-[10px] font-mono">0</span>
                     </button>
 
+                    <button onclick="switchTab('boletos')" id="tab-btn-boletos"
+                        class="tab-btn px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-slate-400 hover:text-white hover:bg-surface-800">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <span>Avisos de Boletos</span>
+                        <span id="boletos-count" class="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-0.2 rounded-full text-[10px] font-mono">0</span>
+                    </button>
+
                     <button onclick="switchTab('incidents')" id="tab-btn-incidents"
                         class="tab-btn px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-slate-400 hover:text-white hover:bg-surface-800">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
@@ -489,6 +584,59 @@ async fn dashboard_handler() -> Html<&'static str> {
                         <svg class="w-10 h-10 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                         <p class="text-sm font-medium">Nenhum computador conectado no momento.</p>
                         <p class="text-xs text-slate-600 mt-1">Inicie o CYPHER Agent em um terminal Windows para registrá-lo automaticamente.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================== -->
+            <!-- ABA: AVISOS & AUDITORIA DE BOLETOS             -->
+            <!-- ============================================== -->
+            <section id="tab-boletos" class="tab-pane hidden space-y-6">
+                <!-- Métricas Exclusivas de Boletos -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="bg-surface-900 border border-surface-800 p-5 rounded-2xl shadow-sm">
+                        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Documentos Auditados</span>
+                        <div id="stat-boletos-total" class="text-3xl font-extrabold text-white mt-1">0</div>
+                    </div>
+                    <div class="bg-surface-900 border border-surface-800 p-5 rounded-2xl shadow-sm">
+                        <span class="text-xs font-semibold text-rose-400 uppercase tracking-wider">Fraudes Bloqueadas</span>
+                        <div id="stat-boletos-fraudes" class="text-3xl font-extrabold text-rose-400 mt-1">0</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between border-b border-surface-800 pb-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-white tracking-tight">Avisos e Auditoria de Boletos</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Alertas de adulteração de linha digitável (bolware), checksums inválidos e divergências</p>
+                    </div>
+                    <button onclick="fetchBoletoAlerts()" class="text-xs text-cypher-base hover:underline font-semibold flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        <span>Atualizar Avisos</span>
+                    </button>
+                </div>
+
+                <div class="bg-surface-900 border border-surface-800 rounded-2xl overflow-hidden shadow-xl">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-surface-950 text-slate-400 border-b border-surface-800 uppercase tracking-wider font-mono text-[11px]">
+                                <tr>
+                                    <th class="py-3.5 px-4 font-semibold">Registro</th>
+                                    <th class="py-3.5 px-4 font-semibold">Horário</th>
+                                    <th class="py-3.5 px-4 font-semibold">Computador / Origem</th>
+                                    <th class="py-3.5 px-4 font-semibold">Arquivo / Documento</th>
+                                    <th class="py-3.5 px-4 font-semibold">Score Risco</th>
+                                    <th class="py-3.5 px-4 font-semibold">Status</th>
+                                    <th class="py-3.5 px-4 font-semibold">Parecer Técnico</th>
+                                </tr>
+                            </thead>
+                            <tbody id="boletos-tbody" class="divide-y divide-surface-800/60 font-mono">
+                                <tr>
+                                    <td colspan="7" class="text-center py-12 text-slate-500 font-sans">
+                                        Nenhum aviso ou documento financeiro registrado até o momento.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -647,6 +795,7 @@ async fn dashboard_handler() -> Html<&'static str> {
             if (isAuth) {
                 fetchDevices();
                 fetchIncidents();
+                fetchBoletoAlerts();
             }
         }
 
@@ -682,6 +831,7 @@ async fn dashboard_handler() -> Html<&'static str> {
             activeBtn.className = 'tab-btn px-4 py-2 rounded-xl transition-all flex items-center gap-2 bg-cypher-base text-white shadow-sm shadow-cypher-base/30 font-semibold';
 
             if (tabId === 'incidents') fetchIncidents();
+            if (tabId === 'boletos') fetchBoletoAlerts();
         }
 
         function updateClock() {
@@ -710,6 +860,17 @@ async fn dashboard_handler() -> Html<&'static str> {
                 renderIncidents(list);
             } catch (err) {
                 console.error("Falha ao buscar incidentes:", err);
+            }
+        }
+
+        async function fetchBoletoAlerts() {
+            if (sessionStorage.getItem('cypher_auth') !== 'true') return;
+            try {
+                const res = await fetch('/api/boletos');
+                const list = await res.json();
+                renderBoletoAlerts(list);
+            } catch (err) {
+                console.error("Falha ao buscar avisos de boletos:", err);
             }
         }
 
@@ -836,6 +997,53 @@ async fn dashboard_handler() -> Html<&'static str> {
             }).join('');
         }
 
+        function renderBoletoAlerts(list) {
+            const tbody = document.getElementById('boletos-tbody');
+            const totalEl = document.getElementById('stat-boletos-total');
+            const fraudesEl = document.getElementById('stat-boletos-fraudes');
+            const validosEl = document.getElementById('stat-boletos-validos');
+            const badgeCount = document.getElementById('boletos-count');
+
+            const fraudesCount = list.filter(b => !b.confiavel).length;
+            const validosCount = list.filter(b => b.confiavel).length;
+
+            totalEl.innerText = list.length;
+            fraudesEl.innerText = fraudesCount;
+            validosEl.innerText = validosCount;
+            badgeCount.innerText = fraudesCount;
+
+            if (!list || list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-slate-500 font-sans">Nenhum aviso ou documento financeiro registrado até o momento.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(b => {
+                const isFraud = !b.confiavel;
+                const statusBadge = isFraud 
+                    ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold border text-rose-400 bg-rose-500/10 border-rose-500/30">⚠ FRAUDE DETECTADA</span>`
+                    : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">✓ AUTÊNTICO / ÍNTEGRO</span>`;
+                const dateStr = new Date(b.timestamp * 1000).toLocaleString('pt-BR');
+                const nameDisplay = b.alias ? `${b.alias} (${b.hostname})` : b.hostname;
+                const scoreColor = b.score_risco > 50 ? 'text-rose-400' : b.score_risco > 20 ? 'text-amber-400' : 'text-emerald-400';
+
+                return `
+                <tr class="hover:bg-surface-800/30 transition-colors">
+                    <td class="py-3 px-4 font-bold text-slate-300">${b.id}</td>
+                    <td class="py-3 px-4 text-slate-400">${dateStr}</td>
+                    <td class="py-3 px-4">
+                        <span class="text-white font-sans font-medium block">${nameDisplay}</span>
+                        <span class="text-[11px] text-blue-400 font-mono">${b.ip}</span>
+                    </td>
+                    <td class="py-3 px-4 text-slate-200 font-mono">${b.arquivo}</td>
+                    <td class="py-3 px-4 font-bold font-mono ${scoreColor}">${b.score_risco}/100</td>
+                    <td class="py-3 px-4">${statusBadge}</td>
+                    <td class="py-3 px-4 text-slate-300 font-sans text-xs max-w-xs truncate" title="${b.detalhes_alerta.join('; ')}">
+                        ${b.detalhes_alerta.length > 0 ? b.detalhes_alerta.join('; ') : 'Documento sem divergências.'}
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
         function renderIncidents(list) {
             const tbody = document.getElementById('incidents-tbody');
             if (!list || list.length === 0) {
@@ -844,7 +1052,7 @@ async fn dashboard_handler() -> Html<&'static str> {
             }
 
             tbody.innerHTML = list.map(inc => {
-                const isIsolate = inc.event_type.includes('ISOLAMENTO') || inc.event_type.includes('QUARENTENA');
+                const isIsolate = inc.event_type.includes('ISOLAMENTO') || inc.event_type.includes('QUARENTENA') || inc.event_type.includes('FRAUDE');
                 const badgeColor = isIsolate ? 'text-rose-400 bg-rose-500/10 border-rose-500/30' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
                 const dateStr = new Date(inc.timestamp * 1000).toLocaleString('pt-BR');
                 const nameDisplay = inc.alias ? `${inc.alias} (${inc.hostname})` : inc.hostname;
