@@ -1,0 +1,10 @@
+C:\Users\Pichau\Documents\GitHub\cypher_adm\target\debug\deps\axum_streams-0348d1a95d382270.d: C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\lib.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\stream_format.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\stream_body_as.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\envelope.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\json_formats.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\text_format.rs
+
+C:\Users\Pichau\Documents\GitHub\cypher_adm\target\debug\deps\libaxum_streams-0348d1a95d382270.rmeta: C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\lib.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\stream_format.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\stream_body_as.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\envelope.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\json_formats.rs C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\text_format.rs
+
+C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\lib.rs:
+C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\stream_format.rs:
+C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\stream_body_as.rs:
+C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\envelope.rs:
+C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\json_formats.rs:
+C:\Users\Pichau\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-streams-0.24.0\src\text_format.rs:
