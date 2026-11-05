@@ -20,6 +20,7 @@ pub struct Device {
     pub hostname: String,
     pub alias: Option<String>,
     pub ip: String,
+    pub public_ip: Option<String>,
     pub status: String,        // "NORMAL" ou "QUARENTENA"
     pub last_seen: u64,
     pub last_alert: Option<String>,
@@ -32,6 +33,7 @@ pub struct Incident {
     pub hostname: String,
     pub alias: Option<String>,
     pub ip: String,
+    pub public_ip: Option<String>,
     pub event_type: String,
     pub details: String,
 }
@@ -116,7 +118,7 @@ async fn handle_heartbeat(
     let mut app_data = state.lock().unwrap();
 
     // Captura o IP real da conexão (seja local ou via proxy/Vercel)
-    let client_ip = headers
+    let wan_ip = headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.split(',').next())
@@ -126,26 +128,27 @@ async fn handle_heartbeat(
                 .get("x-real-ip")
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.trim().to_string())
-        })
-        .unwrap_or_else(|| {
-            if payload.ip.is_empty() || payload.ip == "Endpoint Conectado" || payload.ip == "Local" {
-                "127.0.0.1".to_string()
-            } else {
-                payload.ip.clone()
-            }
         });
+
+    let lan_ip = if !payload.ip.is_empty() && payload.ip != "Endpoint Conectado" && payload.ip != "Local" {
+        payload.ip.clone()
+    } else {
+        wan_ip.clone().unwrap_or_else(|| "127.0.0.1".to_string())
+    };
 
     let entry = app_data.devices.entry(payload.hostname.clone()).or_insert_with(|| Device {
         hostname: payload.hostname.clone(),
         alias: None,
-        ip: client_ip.clone(),
+        ip: lan_ip.clone(),
+        public_ip: wan_ip.clone(),
         status: "NORMAL".to_string(),
         last_seen: now_secs(),
         last_alert: None,
     });
 
     entry.last_seen = now_secs();
-    entry.ip = client_ip;
+    entry.ip = lan_ip;
+    entry.public_ip = wan_ip;
 
     Json(CommandResponse {
         should_isolate: entry.status == "QUARENTENA",
@@ -159,12 +162,14 @@ async fn handle_alert(
 ) -> Json<serde_json::Value> {
     let mut app_data = state.lock().unwrap();
     let mut ip_salvo = "Local".to_string();
+    let mut public_ip_salvo = None;
     let mut alias_salvo = None;
 
     if let Some(device) = app_data.devices.get_mut(&payload.hostname) {
         device.status = "QUARENTENA".to_string();
         device.last_alert = Some(payload.details.clone());
         ip_salvo = device.ip.clone();
+        public_ip_salvo = device.public_ip.clone();
         alias_salvo = device.alias.clone();
         println!("🚨 [ADM ALERTA] Dispositivo {} entrou em quarentena automática!", payload.hostname);
     }
@@ -175,6 +180,7 @@ async fn handle_alert(
         hostname: payload.hostname,
         alias: alias_salvo,
         ip: ip_salvo,
+        public_ip: public_ip_salvo,
         event_type: "AUTO_ISOLAMENTO".to_string(),
         details: payload.details,
     };
@@ -208,6 +214,7 @@ async fn toggle_quarantine(
             hostname: device.hostname.clone(),
             alias: device.alias.clone(),
             ip: device.ip.clone(),
+            public_ip: device.public_ip.clone(),
             event_type: action_type.to_string(),
             details: desc.to_string(),
         };
@@ -367,7 +374,7 @@ async fn dashboard_handler() -> Html<&'static str> {
                     </div>
 
                     <div id="login-error" class="hidden text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 p-3 rounded-xl font-medium">
-                        Credenciais inválidas. Usuário padrão: <strong>admin</strong> | Senha: <strong>123456</strong>
+                        Credenciais inválidas.
                     </div>
 
                     <button type="submit"
