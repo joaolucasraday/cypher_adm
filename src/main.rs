@@ -1080,9 +1080,9 @@ async fn dashboard_handler() -> Html<&'static str> {
                 
                 let statusBadge = '';
                 if (statusAuditoria === 'BLOQUEADO') {
-                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-rose-400 bg-rose-500/10 border-rose-500/30">⛔ BLOQUEADO</span>`;
+                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-rose-400 bg-rose-500/10 border-rose-500/30">BLOQUEADO</span>`;
                 } else if (statusAuditoria === 'APROVADO') {
-                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">✓ AUDITADO</span>`;
+                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">AUDITADO</span>`;
                 } else {
                     statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-amber-400 bg-amber-500/10 border-amber-500/30 animate-pulse">PENDENTE</span>`;
                 }
