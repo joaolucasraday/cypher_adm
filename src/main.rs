@@ -69,14 +69,18 @@ pub struct RenamePayload {
     pub alias: String,
 }
 
-#[derive(Deserialize)]
-pub struct FinancialAuditPayload {
+#[derive(Deserialize, Debug)]
+pub struct FinancialReportPayload {
     pub hostname: String,
+    #[serde(default)]
+    pub ip: String,
     pub arquivo: String,
-    pub confiavel: bool,
+    #[serde(default)]
+    pub confiavel: bool, // <-- Essencial para o if !payload.confiavel funcionar
     pub score_risco: u32,
     pub recomendacao: String,
-    pub detalhes_alerta: Vec<String>,
+    #[serde(default)]
+    pub fatores_risco: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -225,7 +229,7 @@ async fn handle_alert(
 // Recebe relatório do validador de boletos enviado pelo Agent
 async fn handle_financial_audit(
     State(state): State<AppState>,
-    Json(payload): Json<FinancialAuditPayload>,
+    Json(payload): Json<FinancialReportPayload>,
 ) -> Json<serde_json::Value> {
     let mut app_data = state.lock().unwrap();
     let mut ip_salvo = "Local".to_string();
@@ -250,7 +254,7 @@ async fn handle_financial_audit(
         confiavel: payload.confiavel,
         score_risco: payload.score_risco,
         recomendacao: payload.recomendacao.clone(),
-        detalhes_alerta: payload.detalhes_alerta.clone(),
+        detalhes_alerta: payload.fatores_risco.clone(),
     };
     app_data.boleto_alerts.insert(0, boleto_entry);
 
@@ -268,7 +272,7 @@ async fn handle_financial_audit(
                 "Documento: '{}' | Risco: {}/100 | {}",
                 payload.arquivo,
                 payload.score_risco,
-                payload.detalhes_alerta.join("; ")
+                payload.fatores_risco.join("; ")
             ),
         };
         app_data.incidents.insert(0, incident);
