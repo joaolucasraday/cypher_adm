@@ -1084,7 +1084,7 @@ async fn dashboard_handler() -> Html<&'static str> {
                 } else if (statusAuditoria === 'APROVADO') {
                     statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">✓ AUDITADO</span>`;
                 } else {
-                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-amber-400 bg-amber-500/10 border-amber-500/30 animate-pulse">⚠ PENDENTE</span>`;
+                    statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold border text-amber-400 bg-amber-500/10 border-amber-500/30 animate-pulse">PENDENTE</span>`;
                 }
 
                 const dateStr = new Date(b.timestamp * 1000).toLocaleString('pt-BR');
